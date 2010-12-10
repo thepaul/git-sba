@@ -101,8 +101,10 @@ def main(args):
     g = Popen(['git', 'show-branch', '--color=always'] + showlist(), stdout=PIPE)
     git_pager = git_config('core.pager', 'less -FSRX')
     less = Popen(git_pager, shell=True, stdin=g.stdout)
-    g.wait()
-    return less.wait()
+    less.wait()
+    if g.poll() is None:
+        g.terminate()
+    return g.wait()
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
