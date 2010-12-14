@@ -50,7 +50,12 @@ def sort_branches(branches):
     remote = []
     local = []
     for bname, commit, desc in branches:
-        (remote if bname.startswith('remotes/') else local).append((bname, commit, desc))
+        if bname.startswith('remotes/'):
+            sortbin = remote
+            bname = bname[8:]
+        else:
+            sortbin = local
+        sortbin.append((bname, commit, desc))
     return remote, local
 
 def remove_hidden(hidelist, branches):
@@ -71,7 +76,7 @@ def find_matching_remotes(config, local, remote):
     remoteset = set()
     for bname, commit, desc in local:
         for rbname, rcommit, rdesc in remote:
-            if fnmatchcase(rbname, 'remotes/*/%s' % bname):
+            if fnmatchcase(rbname, '*/%s' % bname):
                 if rbname not in remoteset:
                     wanted_remotes.append((rbname, rcommit, rdesc))
                     remoteset.add(rbname)
