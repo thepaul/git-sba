@@ -3,19 +3,30 @@
 # git-sba
 
 import sys
+import os
 from fnmatch import fnmatchcase
 from subprocess import Popen, PIPE
+import logging
 
 class CalledProcessError(Exception):
     pass
 
+def Popen_dbg(*args, **kwargs):
+    logging.debug('Calling: %r with (%s)' %
+                  (args, ' '.join(['%s=%r' % (k,v) for (k,v) in kwargs.items()])))
+    p = Popen(*args, **kwargs)
+    return p
+
 def check_output(*args, **kwargs):
     kwargs['stdout'] = PIPE
-    p = Popen(*args, **kwargs)
+    p = Popen_dbg(*args, **kwargs)
+    logging.debug('command pid %d' % p.pid)
     out, err = p.communicate()
     code = p.wait()
     if code != 0:
+        logging.debug('command pid %d failed, exit code %d' % (p.pid, code))
         raise CalledProcessError(code, args[0])
+    logging.debug('command pid %d returned: %r' % (p.pid, out))
     return out
 
 def git_call(cmd_args, *args, **kwargs):
@@ -28,6 +39,7 @@ def git_branches():
 
 config_items = (
     'hide',
+    'debug',
     'alwaysshow'
 )
 
@@ -46,66 +58,51 @@ def git_sba_config():
         conf[item] = git_config('sba.%s' % item).strip()
     return conf
 
-def sort_branches(branches):
-    remote = []
-    local = []
-    for bname, commit, desc in branches:
-        if bname.startswith('remotes/'):
-            sortbin = remote
-            bname = bname[8:]
-        else:
-            sortbin = local
-        sortbin.append((bname, commit, desc))
-    return remote, local
-
 def remove_hidden(hidelist, branches):
     hides = hidelist.split(';')
 
     result = []
-    for bname, commit, desc in branches:
+    for bname in branches:
         if any(fnmatchcase(bname, patt) for patt in hides):
             continue
-        result.append((bname, commit, desc))
+        result.append(bname)
     return result
 
-def remove_links(branches):
-    return [(b, c, d) for (b, c, d) in branches if c != '->']
+def get_branch_data_to_show(config):
+    extras = config['alwaysshow'].split(';') \
+           + list(config['args'])
+    branchdata = git_call(['for-each-ref', '--python', '--format',
+                           '(%(refname:short), %(upstream:short)),', 'refs/heads'] + extras)
+    return eval('[%s]' % (branchdata,))
 
-def find_matching_remotes(config, local, remote):
-    wanted_remotes = []
-    remoteset = set()
-    for bname, commit, desc in local:
-        for rbname, rcommit, rdesc in remote:
-            if fnmatchcase(rbname, '*/%s' % bname):
-                if rbname not in remoteset:
-                    wanted_remotes.append((rbname, rcommit, rdesc))
-                    remoteset.add(rbname)
-    extra_list = config['alwaysshow'].split(';')
-    for patt in extra_list:
-        for rbname, rcommit, rdesc in remote:
-            if rbname not in remoteset and fnmatchcase(rbname, patt):
-                wanted_remotes.append((rbname, rcommit, rdesc))
-                remoteset.add(rbname)
-    return local + wanted_remotes
+def determine_showlist(config, branches):
+    locallist = []
+    remotelist = []
+    for local, tracked in branches:
+        if local not in locallist:
+            locallist.append(local)
+        if tracked and tracked not in remotelist:
+            remotelist.append(tracked)
+    return remove_hidden(config['hide'], locallist + remotelist)
 
-def determine_showlist(config, local, remote):
-    local = remove_hidden(config['hide'], local)
-    remote = remove_hidden(config['hide'], remote)
-    local = remove_links(local)
-    remote = remove_links(remote)
-    showlist = local + find_matching_remotes(config, local, remote)
-    return [b[0] for b in showlist]
-
-def showlist():
-    branches = git_branches()
-    remote, local = sort_branches(branches)
-    config = git_sba_config()
-    return determine_showlist(config, local, remote)
+def showlist(config):
+    branches = get_branch_data_to_show(config)
+    return determine_showlist(config, branches)
 
 def main(args):
-    g = Popen(['git', 'show-branch', '--color=always'] + showlist(), stdout=PIPE)
-    git_pager = git_config('core.pager', 'less -FSRX')
-    less = Popen(git_pager, shell=True, stdin=g.stdout)
+    config = git_sba_config()
+    config['args'] = args
+    try:
+        config['git_exec'] = os.path.join(os.environ['GIT_EXEC_PATH'], 'git')
+    except KeyError:
+        config['git_exec'] = 'git'
+    if config['debug'].lower() in ('1', 'on', 'yes', 'true', 'y', 't'):
+        logger = logging.getLogger()
+        logger.setLevel(logging.DEBUG)
+    config['git_pager'] = git_config('core.pager', 'less -FSRX')
+
+    g = Popen_dbg(['git', 'show-branch', '--color=always'] + showlist(config), stdout=PIPE)
+    less = Popen(config['git_pager'], shell=True, stdin=g.stdout)
     less.wait()
     if g.poll() is None:
         g.terminate()
