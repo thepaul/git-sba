@@ -68,11 +68,26 @@ def remove_hidden(hidelist, branches):
         result.append(bname)
     return result
 
+def git_rev_parse(rev):
+    return git_call(['rev-parse', '--no-flags', '--symbolic-full-name', rev]).splitlines()
+
+def is_glob(patt):
+    return '*' in patt or '?' in patt or '[' in patt
+
+def expand_full_names(patt):
+    if not patt:
+        return []
+    if is_glob(patt):
+        patt = '--glob=' + patt
+    return git_rev_parse(patt)
+
 def get_branch_data_to_show(config):
     extras = config['alwaysshow'].split(';') \
            + list(config['args'])
+    expanded_extras = reduce(lambda x,y:x+y, map(expand_full_names, extras), [])
     branchdata = git_call(['for-each-ref', '--python', '--format',
-                           '(%(refname:short), %(upstream:short)),', 'refs/heads'] + extras)
+                           '(%(refname:short), %(upstream:short)),', 'refs/heads']
+                          + expanded_extras)
     return eval('[%s]' % (branchdata,))
 
 def determine_showlist(config, branches):
