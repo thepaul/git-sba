@@ -10,7 +10,7 @@ in the ``[alias]`` section of `.gitconfig`_.
 
 It delivers a view like ``git show-branch -a``, but differs in a couple ways:
 
-1. Only remote branches named the same as your local branches will be
+1. Only remote branches which are being tracked by your local branches will be
    shown. This can simplify the view when your main object is to compare
    your local branches with relevant remote branches.
 
