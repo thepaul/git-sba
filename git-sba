@@ -56,14 +56,13 @@ def git_sba_config():
     conf = {}
     for item in config_items:
         conf[item] = git_config('sba.%s' % item).strip()
+    conf['hide'] = conf['hide'].split(';')
     return conf
 
 def remove_hidden(hidelist, branches):
-    hides = hidelist.split(';')
-
     result = []
     for bname in branches:
-        if any(fnmatchcase(bname, patt) for patt in hides):
+        if any(fnmatchcase(bname, patt) for patt in hidelist):
             continue
         result.append(bname)
     return result
@@ -107,6 +106,9 @@ def showlist(config):
 def main(args):
     config = git_sba_config()
     config['args'] = args
+    while args and args[0] == '-x':
+       config['hide'].append(args[1])
+       del args[:2]
     try:
         config['git_exec'] = os.path.join(os.environ['GIT_EXEC_PATH'], 'git')
     except KeyError:
